@@ -1,6 +1,9 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
+from openpyxl import Workbook
+from openpyxl.styles import Alignment
+from openpyxl.utils.dataframe import dataframe_to_rows
 
 PAGO_DIAS = {
     'diario': 1,
@@ -46,13 +49,14 @@ if uploaded_file:
             saldo = valor - pagos
             df.at[i, 'Saldo restante'] = saldo
 
+            if saldo == 0:
+                df.at[i, 'Estatus'] = 'Pagado'
+                continue
+
             if pd.isnull(prox_pago) and pd.notnull(fecha_credito) and tipo in PAGO_DIAS:
                 df.at[i, 'Próximo pago'] = fecha_credito + timedelta(days=PAGO_DIAS[tipo])
                 prox_pago = df.at[i, 'Próximo pago']
 
-            if saldo == 0:
-                df.at[i, 'Estatus'] = 'Pagado'
-                continue
             if pd.notnull(prox_pago):
                 dias_dif = (prox_pago.date() - hoy).days
                 if dias_dif < 0:
@@ -97,8 +101,28 @@ if uploaded_file:
         st.dataframe(df if filtro == "Todos" else df[df['Estatus'] == filtro], use_container_width=True)
 
     st.subheader("📥 Descargar archivo actualizado")
-    output_file = "creditos_actualizados.xlsx"
-    df.to_excel(output_file, index=False)
-    with open(output_file, "rb") as f:
-        st.download_button("Descargar Excel", f, file_name=output_file)
 
+    def exportar_excel_con_formato(df, nombre_archivo="creditos_actualizados.xlsx"):
+        wb = Workbook()
+        ws = wb.active
+        for r_idx, row in enumerate(dataframe_to_rows(df, index=False, header=True), 1):
+            for c_idx, value in enumerate(row, 1):
+                celda = ws.cell(row=r_idx, column=c_idx, value=value)
+                celda.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        for col in ws.columns:
+            max_length = 0
+            col_letter = col[0].column_letter
+            for cell in col:
+                try:
+                    if cell.value:
+                        max_length = max(max_length, len(str(cell.value)))
+                except:
+                    pass
+            ws.column_dimensions[col_letter].width = max_length + 2
+        output_file = nombre_archivo
+        wb.save(output_file)
+        return output_file
+
+    archivo_excel = exportar_excel_con_formato(df)
+    with open(archivo_excel, "rb") as f:
+        st.download_button("Descargar Excel", f, file_name=archivo_excel)
