@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 from openpyxl import Workbook
-from openpyxl.styles import Alignment
+from openpyxl.styles import Alignment, PatternFill
 from openpyxl.utils.dataframe import dataframe_to_rows
 
 PAGO_DIAS = {
@@ -10,6 +10,14 @@ PAGO_DIAS = {
     'semanal': 7,
     'quincenal': 15,
     'mensual': 30
+}
+
+ESTATUS_COLORES = {
+    'Al día': 'C6EFCE',
+    'Vencido': 'FFC7CE',
+    'Pagan hoy': 'ADD8E6',
+    'Próximo a vencer': 'FFEB9C',
+    'Pagado': 'A7E0E5'
 }
 
 st.set_page_config(page_title="Gestor de Créditos", layout="wide")
@@ -49,7 +57,7 @@ if uploaded_file:
             saldo = valor - pagos
             df.at[i, 'Saldo restante'] = saldo
 
-            if saldo == 0:
+            if saldo <= 0:
                 df.at[i, 'Estatus'] = 'Pagado'
                 continue
 
@@ -76,29 +84,52 @@ if uploaded_file:
     filtro = st.selectbox("🔍 Filtrar por estatus", ["Todos"] + sorted(df['Estatus'].unique()))
     df_filtrado = df if filtro == "Todos" else df[df['Estatus'] == filtro]
 
-    st.dataframe(df_filtrado, use_container_width=True)
+    seleccion = st.data_editor(
+        df_filtrado,
+        use_container_width=True,
+        hide_index=True,
+        key="tabla_creditos",
+        column_order=None,
+        num_rows="dynamic"
+    )
 
     st.subheader("💰 Registrar pago")
-    nombre = st.selectbox("Selecciona el cliente", df['Cliente'].astype(str).unique())
+
+    clientes_visibles = df_filtrado['Cliente'].astype(str).unique()
+    if isinstance(seleccion, pd.Series):
+        cliente_preseleccionado = seleccion['Cliente']
+    else:
+        cliente_preseleccionado = clientes_visibles[0] if len(clientes_visibles) > 0 else ""
+
+    nombre = st.selectbox(
+        "Selecciona el cliente",
+        clientes_visibles,
+        index=list(clientes_visibles).index(cliente_preseleccionado) if cliente_preseleccionado in clientes_visibles else 0
+    )
+
     monto = st.number_input("Monto a abonar", min_value=0.0, step=100.0)
 
     if st.button("Registrar pago"):
         index = df[df['Cliente'] == nombre].index[0]
-        df.at[index, 'Pagos realizados'] += monto
-        df.at[index, 'Saldo restante'] = df.at[index, 'Valor'] - df.at[index, 'Pagos realizados']
-
-        tipo_pago = df.at[index, 'Tipo de pago']
-        dias = PAGO_DIAS.get(str(tipo_pago).lower(), 1)
-
-        if pd.notnull(df.at[index, 'Próximo pago']):
-            df.at[index, 'Próximo pago'] += timedelta(days=dias)
+        saldo_actual = df.at[index, 'Valor'] - df.at[index, 'Pagos realizados']
+        if monto > saldo_actual:
+            st.error(f"❌ El monto supera el saldo restante de {saldo_actual:.2f}")
         else:
-            df.at[index, 'Próximo pago'] = datetime.now() + timedelta(days=dias)
+            df.at[index, 'Pagos realizados'] += monto
+            df.at[index, 'Saldo restante'] = df.at[index, 'Valor'] - df.at[index, 'Pagos realizados']
 
-        df = actualizar_estatus(df)
-        st.success("✅ Pago registrado y actualizado.")
+            tipo_pago = df.at[index, 'Tipo de pago']
+            dias = PAGO_DIAS.get(str(tipo_pago).lower(), 1)
 
-        st.dataframe(df if filtro == "Todos" else df[df['Estatus'] == filtro], use_container_width=True)
+            if pd.notnull(df.at[index, 'Próximo pago']):
+                df.at[index, 'Próximo pago'] += timedelta(days=dias)
+            else:
+                df.at[index, 'Próximo pago'] = datetime.now() + timedelta(days=dias)
+
+            df = actualizar_estatus(df)
+            st.success("✅ Pago registrado y actualizado.")
+            df_filtrado = df if filtro == "Todos" else df[df['Estatus'] == filtro]
+            st.dataframe(df_filtrado, use_container_width=True)
 
     st.subheader("📥 Descargar archivo actualizado")
 
@@ -109,6 +140,12 @@ if uploaded_file:
             for c_idx, value in enumerate(row, 1):
                 celda = ws.cell(row=r_idx, column=c_idx, value=value)
                 celda.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                if r_idx > 1 and df.columns[c_idx - 1] == "Estatus":
+                    estatus = value
+                    color = ESTATUS_COLORES.get(estatus, None)
+                    if color:
+                        for col in range(1, len(df.columns) + 1):
+                            ws.cell(row=r_idx, column=col).fill = PatternFill(start_color=color, end_color=color, fill_type="solid")
         for col in ws.columns:
             max_length = 0
             col_letter = col[0].column_letter
