@@ -50,6 +50,9 @@ if uploaded_file:
                 df.at[i, 'Próximo pago'] = fecha_credito + timedelta(days=PAGO_DIAS[tipo])
                 prox_pago = df.at[i, 'Próximo pago']
 
+            if saldo == 0:
+                df.at[i, 'Estatus'] = 'Pagado'
+                continue
             if pd.notnull(prox_pago):
                 dias_dif = (prox_pago.date() - hoy).days
                 if dias_dif < 0:
