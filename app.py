@@ -17,7 +17,7 @@ ESTATUS_COLORES = {
     'Vencido': 'FFC7CE',
     'Pagan hoy': 'ADD8E6',
     'Próximo a vencer': 'FFEB9C',
-    'Pagado': 'D9C3B0'  # Marrón claro
+    'Pagado': 'D9C3B0'
 }
 
 st.set_page_config(page_title="Gestor de Créditos", layout="wide")
@@ -25,61 +25,64 @@ st.title("📋 Gestor de Créditos Web")
 
 uploaded_file = st.file_uploader("📤 Sube tu archivo Excel", type=["xlsx"])
 
-if uploaded_file:
-    df = pd.read_excel(uploaded_file)
-    df.columns = [col.strip().capitalize() for col in df.columns]
-
-    if 'Tipo de pago' not in df.columns:
-        df['Tipo de pago'] = 'diario'
-    if 'Próximo pago' not in df.columns:
-        df['Próximo pago'] = pd.NaT
-    if 'Pagos realizados' not in df.columns:
-        df['Pagos realizados'] = 0
-    if 'Saldo restante' not in df.columns:
-        df['Saldo restante'] = df['Valor']
-    if 'Estatus' not in df.columns:
-        df['Estatus'] = ''
-
-    df['Fecha'] = pd.to_datetime(df['Fecha'], errors='coerce')
-    df['Próximo pago'] = pd.to_datetime(df['Próximo pago'], errors='coerce')
-    df['Pagos realizados'] = pd.to_numeric(df['Pagos realizados'], errors='coerce').fillna(0)
-    df['Saldo restante'] = pd.to_numeric(df['Saldo restante'], errors='coerce').fillna(df['Valor'])
-
+def actualizar_estatus(df):
     hoy = datetime.now().date()
+    for i, row in df.iterrows():
+        tipo = str(row['Tipo de pago']).lower()
+        fecha_credito = row['Fecha']
+        prox_pago = row['Próximo pago']
+        pagos = row['Pagos realizados']
+        valor = row['Valor']
+        saldo = valor - pagos
+        df.at[i, 'Saldo restante'] = saldo
 
-    def actualizar_estatus(df):
-        for i, row in df.iterrows():
-            tipo = str(row['Tipo de pago']).lower()
-            fecha_credito = row['Fecha']
-            prox_pago = row['Próximo pago']
-            pagos = row['Pagos realizados']
-            valor = row['Valor']
-            saldo = valor - pagos
-            df.at[i, 'Saldo restante'] = saldo
+        if saldo <= 0:
+            df.at[i, 'Estatus'] = 'Pagado'
+            continue
 
-            if saldo <= 0:
-                df.at[i, 'Estatus'] = 'Pagado'
-                continue
+        if pd.isnull(prox_pago) and pd.notnull(fecha_credito) and tipo in PAGO_DIAS:
+            df.at[i, 'Próximo pago'] = fecha_credito + timedelta(days=PAGO_DIAS[tipo])
+            prox_pago = df.at[i, 'Próximo pago']
 
-            if pd.isnull(prox_pago) and pd.notnull(fecha_credito) and tipo in PAGO_DIAS:
-                df.at[i, 'Próximo pago'] = fecha_credito + timedelta(days=PAGO_DIAS[tipo])
-                prox_pago = df.at[i, 'Próximo pago']
-
-            if pd.notnull(prox_pago):
-                dias_dif = (prox_pago.date() - hoy).days
-                if dias_dif < 0:
-                    df.at[i, 'Estatus'] = 'Vencido'
-                elif dias_dif == 0:
-                    df.at[i, 'Estatus'] = 'Pagan hoy'
-                elif dias_dif <= 2:
-                    df.at[i, 'Estatus'] = 'Próximo a vencer'
-                else:
-                    df.at[i, 'Estatus'] = 'Al día'
+        if pd.notnull(prox_pago):
+            dias_dif = (prox_pago.date() - hoy).days
+            if dias_dif < 0:
+                df.at[i, 'Estatus'] = 'Vencido'
+            elif dias_dif == 0:
+                df.at[i, 'Estatus'] = 'Pagan hoy'
+            elif dias_dif <= 2:
+                df.at[i, 'Estatus'] = 'Próximo a vencer'
             else:
-                df.at[i, 'Estatus'] = 'Sin fecha'
-        return df
+                df.at[i, 'Estatus'] = 'Al día'
+        else:
+            df.at[i, 'Estatus'] = 'Sin fecha'
+    return df
 
-    df = actualizar_estatus(df)
+if uploaded_file:
+    if 'df_original' not in st.session_state:
+        df = pd.read_excel(uploaded_file)
+        df.columns = [col.strip().capitalize() for col in df.columns]
+
+        if 'Tipo de pago' not in df.columns:
+            df['Tipo de pago'] = 'diario'
+        if 'Próximo pago' not in df.columns:
+            df['Próximo pago'] = pd.NaT
+        if 'Pagos realizados' not in df.columns:
+            df['Pagos realizados'] = 0
+        if 'Saldo restante' not in df.columns:
+            df['Saldo restante'] = df['Valor']
+        if 'Estatus' not in df.columns:
+            df['Estatus'] = ''
+
+        df['Fecha'] = pd.to_datetime(df['Fecha'], errors='coerce')
+        df['Próximo pago'] = pd.to_datetime(df['Próximo pago'], errors='coerce')
+        df['Pagos realizados'] = pd.to_numeric(df['Pagos realizados'], errors='coerce').fillna(0)
+        df['Saldo restante'] = pd.to_numeric(df['Saldo restante'], errors='coerce').fillna(df['Valor'])
+
+        df = actualizar_estatus(df)
+        st.session_state.df_original = df.copy()
+    else:
+        df = st.session_state.df_original
 
     filtro = st.selectbox("🔍 Filtrar por estatus", ["Todos"] + sorted(df['Estatus'].unique()))
     df_filtrado = df if filtro == "Todos" else df[df['Estatus'] == filtro]
@@ -95,7 +98,6 @@ if uploaded_file:
 
     clientes_visibles = df_filtrado['Cliente'].astype(str).unique()
 
-    # 🟡 Sincroniza selección con cliente
     if isinstance(seleccion, pd.DataFrame) and not seleccion.empty:
         cliente_preseleccionado = seleccion.iloc[0]['Cliente']
     elif isinstance(seleccion, pd.Series):
@@ -131,6 +133,7 @@ if uploaded_file:
                 df.at[index, 'Próximo pago'] = datetime.now() + timedelta(days=dias)
 
             df = actualizar_estatus(df)
+            st.session_state.df_original = df  # ⚠️ Guardar cambios en memoria
             st.success("✅ Pago registrado y actualizado.")
             df_filtrado = df if filtro == "Todos" else df[df['Estatus'] == filtro]
             st.dataframe(df_filtrado, use_container_width=True)
@@ -167,4 +170,5 @@ if uploaded_file:
     nombre_archivo = exportar_excel_con_formato(df)
     with open(nombre_archivo, "rb") as f:
         st.download_button("📤 Descargar Excel con formato", f, file_name=nombre_archivo)
+
           
