@@ -26,7 +26,6 @@ st.title("📋 Gestor de Créditos Web")
 
 uploaded_file = st.file_uploader("📤 Sube tu archivo Excel", type=["xlsx"])
 
-
 def actualizar_estatus(df):
     hoy = datetime.now().date()
     for i, row in df.iterrows():
@@ -59,7 +58,6 @@ def actualizar_estatus(df):
         else:
             df.at[i, 'Estatus'] = 'Sin fecha'
     return df
-
 
 def exportar_excel_con_formato(df):
     output = BytesIO()
@@ -124,7 +122,8 @@ if uploaded_file:
     filtro = st.selectbox("🔍 Filtrar por estatus", ["Todos"] + sorted(df['Estatus'].unique()))
     df_filtrado = df if filtro == "Todos" else df[df['Estatus'] == filtro]
 
-    seleccion = st.data_editor(
+    st.subheader("💳 Tabla de Créditos - Edita directamente los abonos")
+    edited_df = st.data_editor(
         df_filtrado,
         use_container_width=True,
         hide_index=True,
@@ -133,33 +132,11 @@ if uploaded_file:
         num_rows="dynamic"
     )
 
-    clientes_visibles = df['Cliente'].astype(str).unique()
-
-    if isinstance(seleccion, pd.DataFrame) and not seleccion.empty:
-        cliente_preseleccionado = seleccion.iloc[0]['Cliente']
-    elif isinstance(seleccion, pd.Series):
-        cliente_preseleccionado = seleccion['Cliente']
-    else:
-        cliente_preseleccionado = clientes_visibles[0] if len(clientes_visibles) > 0 else ""
-
-    st.subheader("💰 Registrar pago")
-
-    nombre = st.selectbox(
-        "Selecciona el cliente",
-        clientes_visibles,
-        index=list(clientes_visibles).index(cliente_preseleccionado) if cliente_preseleccionado in clientes_visibles else 0
-    )
-
-    monto = st.number_input("Monto a abonar", min_value=0.0, step=100.0)
-
-    if st.button("Registrar pago"):
-        index = df[df['Cliente'] == nombre].index[0]
-        saldo_actual = df.at[index, 'Valor'] - df.at[index, 'Pagos realizados']
-        if monto > saldo_actual:
-            st.error(f"❌ El monto supera el saldo restante de {saldo_actual:.2f}")
-        else:
-            df.at[index, 'Pagos realizados'] += monto
-            df.at[index, 'Saldo restante'] = df.at[index, 'Valor'] - df.at[index, 'Pagos realizados']
+    if st.button("✅ Aplicar cambios y actualizar tabla"):
+        for i, row in edited_df.iterrows():
+            index = df[df['Cliente'] == row['Cliente']].index[0]
+            df.at[index, 'Pagos realizados'] = row['Pagos realizados']
+            df.at[index, 'Saldo restante'] = df.at[index, 'Valor'] - row['Pagos realizados']
 
             tipo_pago = df.at[index, 'Tipo de pago']
             dias = PAGO_DIAS.get(str(tipo_pago).lower(), 1)
@@ -169,13 +146,14 @@ if uploaded_file:
             else:
                 df.at[index, 'Próximo pago'] = datetime.now() + timedelta(days=dias)
 
-            df = actualizar_estatus(df)
-            st.session_state.df = df
-            st.success("✅ Pago registrado y actualizado.")
+        df = actualizar_estatus(df)
+        st.session_state.df = df
+        st.success("✔️ Cambios aplicados correctamente.")
 
     st.subheader("📥 Descargar archivo actualizado")
     excel_file = exportar_excel_con_formato(df)
     st.download_button("📤 Descargar Excel con formato", excel_file, file_name="creditos_actualizados.xlsx")
+
 
 
 
