@@ -45,11 +45,14 @@ def actualizar_estatus(df):
             if pd.notnull(fecha_credito) and tipo in PAGO_DIAS:
                 df.at[i, 'Próximo pago'] = fecha_credito + timedelta(days=PAGO_DIAS[tipo])
         else:
-            fecha_base = row['Próximo pago'] if row['Próximo pago'].date() > hoy else hoy
-            df.at[i, 'Próximo pago'] = fecha_base + timedelta(days=PAGO_DIAS.get(tipo, 1))
+            fecha_base = row['Próximo pago']
+            if isinstance(fecha_base, pd.Timestamp):
+                if fecha_base.date() <= hoy:
+                    fecha_base = pd.Timestamp(hoy)
+                df.at[i, 'Próximo pago'] = fecha_base + timedelta(days=PAGO_DIAS.get(tipo, 1))
 
         prox_pago = df.at[i, 'Próximo pago']
-        if pd.notnull(prox_pago):
+        if isinstance(prox_pago, pd.Timestamp) and not pd.isnull(prox_pago):
             dias_dif = (prox_pago.date() - hoy).days
             if dias_dif < 0:
                 df.at[i, 'Estatus'] = 'Vencido'
