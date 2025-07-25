@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
+from io import BytesIO
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, PatternFill
 from openpyxl.utils.dataframe import dataframe_to_rows
@@ -57,6 +58,40 @@ def actualizar_estatus(df):
         else:
             df.at[i, 'Estatus'] = 'Sin fecha'
     return df
+
+def exportar_excel_con_formato(df):
+    output = BytesIO()
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Créditos"
+
+    for r_idx, row in enumerate(dataframe_to_rows(df, index=False, header=True), 1):
+        for c_idx, value in enumerate(row, 1):
+            celda = ws.cell(row=r_idx, column=c_idx, value=value)
+            celda.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+            if r_idx > 1 and df.columns[c_idx - 1] == "Estatus":
+                estatus = value
+                color = ESTATUS_COLORES.get(estatus, None)
+                if color:
+                    fill = PatternFill(start_color=color, end_color=color, fill_type="solid")
+                    for col in range(1, len(df.columns) + 1):
+                        ws.cell(row=r_idx, column=col).fill = fill
+
+    for col in ws.columns:
+        max_length = 0
+        col_letter = col[0].column_letter
+        for cell in col:
+            try:
+                if cell.value:
+                    max_length = max(max_length, len(str(cell.value)))
+            except:
+                pass
+        ws.column_dimensions[col_letter].width = max_length + 2
+
+    wb.save(output)
+    output.seek(0)
+    return output
 
 if uploaded_file:
     if "df" not in st.session_state:
@@ -137,37 +172,9 @@ if uploaded_file:
             st.success("✅ Pago registrado y actualizado.")
 
     st.subheader("📥 Descargar archivo actualizado")
+    excel_file = exportar_excel_con_formato(df)
+    st.download_button("📤 Descargar Excel con formato", excel_file, file_name="creditos_actualizados.xlsx")
 
-    def exportar_excel_con_formato(df, nombre_archivo="creditos_actualizados.xlsx"):
-        wb = Workbook()
-        ws = wb.active
-        for r_idx, row in enumerate(dataframe_to_rows(df, index=False, header=True), 1):
-            for c_idx, value in enumerate(row, 1):
-                celda = ws.cell(row=r_idx, column=c_idx, value=value)
-                celda.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-                if r_idx > 1 and df.columns[c_idx - 1] == "Estatus":
-                    estatus = value
-                    color = ESTATUS_COLORES.get(estatus, None)
-                    if color:
-                        for col in range(1, len(df.columns) + 1):
-                            ws.cell(row=r_idx, column=col).fill = PatternFill(start_color=color, end_color=color, fill_type="solid")
-        for col in ws.columns:
-            max_length = 0
-            col_letter = col[0].column_letter
-            for cell in col:
-                try:
-                    if cell.value:
-                        max_length = max(max_length, len(str(cell.value)))
-                except:
-                    pass
-            ws.column_dimensions[col_letter].width = max_length + 2
-        output_file = nombre_archivo
-        wb.save(output_file)
-        return output_file
-
-    nombre_archivo = exportar_excel_con_formato(df)
-    with open(nombre_archivo, "rb") as f:
-        st.download_button("📤 Descargar Excel con formato", f, file_name=nombre_archivo)
 
 
 
