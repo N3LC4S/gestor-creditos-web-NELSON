@@ -17,7 +17,7 @@ ESTATUS_COLORES = {
     'Vencido': 'FFC7CE',
     'Pagan hoy': 'ADD8E6',
     'Próximo a vencer': 'FFEB9C',
-    'Pagado': 'A7E0E5'
+    'Pagado': 'D9C3B0'  # Marrón claro
 }
 
 st.set_page_config(page_title="Gestor de Créditos", layout="wide")
@@ -93,13 +93,17 @@ if uploaded_file:
         num_rows="dynamic"
     )
 
-    st.subheader("💰 Registrar pago")
-
     clientes_visibles = df_filtrado['Cliente'].astype(str).unique()
-    if isinstance(seleccion, pd.Series):
+
+    # 🟡 Sincroniza selección con cliente
+    if isinstance(seleccion, pd.DataFrame) and not seleccion.empty:
+        cliente_preseleccionado = seleccion.iloc[0]['Cliente']
+    elif isinstance(seleccion, pd.Series):
         cliente_preseleccionado = seleccion['Cliente']
     else:
         cliente_preseleccionado = clientes_visibles[0] if len(clientes_visibles) > 0 else ""
+
+    st.subheader("💰 Registrar pago")
 
     nombre = st.selectbox(
         "Selecciona el cliente",
@@ -160,6 +164,7 @@ if uploaded_file:
         wb.save(output_file)
         return output_file
 
-    archivo_excel = exportar_excel_con_formato(df)
-    with open(archivo_excel, "rb") as f:
-        st.download_button("Descargar Excel", f, file_name=archivo_excel)
+    nombre_archivo = exportar_excel_con_formato(df)
+    with open(nombre_archivo, "rb") as f:
+        st.download_button("📤 Descargar Excel con formato", f, file_name=nombre_archivo)
+          
