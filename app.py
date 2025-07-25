@@ -151,3 +151,4 @@ if uploaded_file:
     excel_file = exportar_excel_con_formato(st.session_state.df_editable)
     st.download_button("📄 Descargar Excel con formato", excel_file, file_name="creditos_actualizados.xlsx")
 
+
