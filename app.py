@@ -26,6 +26,7 @@ st.title("📋 Gestor de Créditos Web")
 
 uploaded_file = st.file_uploader("📤 Sube tu archivo Excel", type=["xlsx"])
 
+
 def actualizar_estatus(df):
     hoy = datetime.now().date()
     for i, row in df.iterrows():
@@ -58,6 +59,7 @@ def actualizar_estatus(df):
         else:
             df.at[i, 'Estatus'] = 'Sin fecha'
     return df
+
 
 def exportar_excel_con_formato(df):
     output = BytesIO()
@@ -131,7 +133,7 @@ if uploaded_file:
         num_rows="dynamic"
     )
 
-    clientes_visibles = df_filtrado['Cliente'].astype(str).unique()
+    clientes_visibles = df['Cliente'].astype(str).unique()
 
     if isinstance(seleccion, pd.DataFrame) and not seleccion.empty:
         cliente_preseleccionado = seleccion.iloc[0]['Cliente']
@@ -168,7 +170,7 @@ if uploaded_file:
                 df.at[index, 'Próximo pago'] = datetime.now() + timedelta(days=dias)
 
             df = actualizar_estatus(df)
-            st.session_state.df = df  # Guarda cambios en la sesión
+            st.session_state.df = df
             st.success("✅ Pago registrado y actualizado.")
 
     st.subheader("📥 Descargar archivo actualizado")
