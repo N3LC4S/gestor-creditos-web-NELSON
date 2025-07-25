@@ -116,27 +116,34 @@ if uploaded_file:
     monto = st.number_input("Monto a abonar", min_value=0.0, step=100.0)
 
     if st.button("Registrar pago"):
-        index = df[df['Cliente'] == nombre].index[0]
-        saldo_actual = df.at[index, 'Valor'] - df.at[index, 'Pagos realizados']
-        if monto > saldo_actual:
-            st.error(f"❌ El monto supera el saldo restante de {saldo_actual:.2f}")
+        index = df[df['Cliente'].astype(str).str.strip().str.lower() == nombre.strip().lower()].index
+
+        if index.empty:
+            st.error("❌ No se encontró el cliente seleccionado.")
         else:
-            df.at[index, 'Pagos realizados'] += monto
-            df.at[index, 'Saldo restante'] = df.at[index, 'Valor'] - df.at[index, 'Pagos realizados']
+            idx = index[0]
+            saldo_actual = df.at[idx, 'Valor'] - df.at[idx, 'Pagos realizados']
 
-            tipo_pago = df.at[index, 'Tipo de pago']
-            dias = PAGO_DIAS.get(str(tipo_pago).lower(), 1)
-
-            if pd.notnull(df.at[index, 'Próximo pago']):
-                df.at[index, 'Próximo pago'] += timedelta(days=dias)
+            if monto > saldo_actual:
+                st.error(f"❌ El monto supera el saldo restante de {saldo_actual:.2f}")
             else:
-                df.at[index, 'Próximo pago'] = datetime.now() + timedelta(days=dias)
+                df.at[idx, 'Pagos realizados'] += monto
+                df.at[idx, 'Saldo restante'] = df.at[idx, 'Valor'] - df.at[idx, 'Pagos realizados']
 
-            df = actualizar_estatus(df)
-            st.session_state.df_original = df  # ⚠️ Guardar cambios en memoria
-            st.success("✅ Pago registrado y actualizado.")
-            df_filtrado = df if filtro == "Todos" else df[df['Estatus'] == filtro]
-            st.dataframe(df_filtrado, use_container_width=True)
+                tipo_pago = df.at[idx, 'Tipo de pago']
+                dias = PAGO_DIAS.get(str(tipo_pago).lower(), 1)
+
+                if pd.notnull(df.at[idx, 'Próximo pago']):
+                    df.at[idx, 'Próximo pago'] += timedelta(days=dias)
+                else:
+                    df.at[idx, 'Próximo pago'] = datetime.now() + timedelta(days=dias)
+
+                df = actualizar_estatus(df)
+                st.session_state.df_original = df
+                st.success("✅ Pago registrado y actualizado.")
+
+                df_filtrado = df if filtro == "Todos" else df[df['Estatus'] == filtro]
+                st.dataframe(df_filtrado, use_container_width=True)
 
     st.subheader("📥 Descargar archivo actualizado")
 
@@ -170,5 +177,6 @@ if uploaded_file:
     nombre_archivo = exportar_excel_con_formato(df)
     with open(nombre_archivo, "rb") as f:
         st.download_button("📤 Descargar Excel con formato", f, file_name=nombre_archivo)
+
 
           
