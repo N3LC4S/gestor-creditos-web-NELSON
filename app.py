@@ -24,7 +24,7 @@ ESTATUS_COLORES = {
 st.set_page_config(page_title="Gestor de Créditos", layout="wide")
 st.title("📋 Gestor de Créditos Web")
 
-uploaded_file = st.file_uploader("📤 Sube tu archivo Excel", type=["xlsx"])
+uploaded_file = st.file_uploader("📄 Sube tu archivo Excel", type=["xlsx"])
 
 def actualizar_estatus(df):
     hoy = datetime.now().date()
@@ -150,10 +150,9 @@ if uploaded_file:
         st.session_state.df = df
         st.success("✔️ Cambios aplicados correctamente.")
 
-    st.subheader("📥 Descargar archivo actualizado")
+    st.subheader("📅 Descargar archivo actualizado")
     excel_file = exportar_excel_con_formato(df)
-    st.download_button("📤 Descargar Excel con formato", excel_file, file_name="creditos_actualizados.xlsx")
-
+    st.download_button("📄 Descargar Excel con formato", excel_file, file_name="creditos_actualizados.xlsx")
 
 
 
