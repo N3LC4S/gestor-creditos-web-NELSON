@@ -149,7 +149,3 @@ if uploaded_file:
     st.subheader("📥 Descargar archivo actualizado")
     excel_file = exportar_excel_con_formato(st.session_state.df_completo)
     st.download_button("📄 Descargar Excel con formato", excel_file, file_name="creditos_actualizados.xlsx")
-
-
-
-          
