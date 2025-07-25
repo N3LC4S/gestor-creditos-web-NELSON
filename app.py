@@ -29,9 +29,8 @@ uploaded_file = st.file_uploader("📄 Sube tu archivo Excel", type=["xlsx"])
 def actualizar_estatus(df):
     hoy = datetime.now().date()
     for i, row in df.iterrows():
-        tipo = str(row['Tipo de pago']).lower()
+        tipo = str(row['Tipo de pago']).strip().lower()
         fecha_credito = row['Fecha']
-        prox_pago = row['Próximo pago']
         pagos = row['Pagos realizados']
         valor = row['Valor']
         saldo = valor - pagos
@@ -39,12 +38,17 @@ def actualizar_estatus(df):
 
         if saldo <= 0:
             df.at[i, 'Estatus'] = 'Pagado'
+            df.at[i, 'Próximo pago'] = pd.NaT
             continue
 
-        if pd.isnull(prox_pago) and pd.notnull(fecha_credito) and tipo in PAGO_DIAS:
-            df.at[i, 'Próximo pago'] = fecha_credito + timedelta(days=PAGO_DIAS[tipo])
-            prox_pago = df.at[i, 'Próximo pago']
+        if pd.isnull(row['Próximo pago']):
+            if pd.notnull(fecha_credito) and tipo in PAGO_DIAS:
+                df.at[i, 'Próximo pago'] = fecha_credito + timedelta(days=PAGO_DIAS[tipo])
+        else:
+            fecha_base = row['Próximo pago'] if row['Próximo pago'].date() > hoy else hoy
+            df.at[i, 'Próximo pago'] = fecha_base + timedelta(days=PAGO_DIAS.get(tipo, 1))
 
+        prox_pago = df.at[i, 'Próximo pago']
         if pd.notnull(prox_pago):
             dias_dif = (prox_pago.date() - hoy).days
             if dias_dif < 0:
@@ -57,6 +61,7 @@ def actualizar_estatus(df):
                 df.at[i, 'Estatus'] = 'Al día'
         else:
             df.at[i, 'Estatus'] = 'Sin fecha'
+
     return df
 
 def exportar_excel_con_formato(df):
@@ -94,7 +99,7 @@ def exportar_excel_con_formato(df):
     return output
 
 if uploaded_file:
-    if "df" not in st.session_state:
+    if "df_completo" not in st.session_state:
         df = pd.read_excel(uploaded_file)
         df.columns = [col.strip().capitalize() for col in df.columns]
 
@@ -115,14 +120,14 @@ if uploaded_file:
         df['Saldo restante'] = pd.to_numeric(df['Saldo restante'], errors='coerce').fillna(df['Valor'])
 
         df = actualizar_estatus(df)
-        st.session_state.df = df
-    else:
-        df = st.session_state.df
+        st.session_state.df_completo = df
+
+    df = st.session_state.df_completo
 
     filtro = st.selectbox("🔍 Filtrar por estatus", ["Todos"] + sorted(df['Estatus'].unique()))
     df_filtrado = df if filtro == "Todos" else df[df['Estatus'] == filtro]
 
-    st.subheader("💳 Tabla de Créditos - Edita directamente los abonos")
+    st.subheader("📊 Tabla de Créditos - Edita directamente los abonos")
     edited_df = st.data_editor(
         df_filtrado,
         use_container_width=True,
@@ -135,25 +140,15 @@ if uploaded_file:
     if st.button("✅ Aplicar cambios y actualizar tabla"):
         for i, row in edited_df.iterrows():
             index = df[df['Cliente'] == row['Cliente']].index[0]
-            df.at[index, 'Pagos realizados'] = row['Pagos realizados']
-            df.at[index, 'Saldo restante'] = df.at[index, 'Valor'] - row['Pagos realizados']
+            st.session_state.df_completo.at[index, 'Pagos realizados'] = row['Pagos realizados']
+            st.session_state.df_completo.at[index, 'Saldo restante'] = df.at[index, 'Valor'] - row['Pagos realizados']
 
-            tipo_pago = df.at[index, 'Tipo de pago']
-            dias = PAGO_DIAS.get(str(tipo_pago).lower(), 1)
+        st.session_state.df_completo = actualizar_estatus(st.session_state.df_completo)
+        st.success("✔️ Cambios aplicados correctamente. La tabla y las fechas han sido recalculadas.")
 
-            if pd.notnull(df.at[index, 'Próximo pago']):
-                df.at[index, 'Próximo pago'] += timedelta(days=dias)
-            else:
-                df.at[index, 'Próximo pago'] = datetime.now() + timedelta(days=dias)
-
-        df = actualizar_estatus(df)
-        st.session_state.df = df
-        st.success("✔️ Cambios aplicados correctamente.")
-
-    st.subheader("📅 Descargar archivo actualizado")
-    excel_file = exportar_excel_con_formato(df)
+    st.subheader("📥 Descargar archivo actualizado")
+    excel_file = exportar_excel_con_formato(st.session_state.df_completo)
     st.download_button("📄 Descargar Excel con formato", excel_file, file_name="creditos_actualizados.xlsx")
-
 
 
 
