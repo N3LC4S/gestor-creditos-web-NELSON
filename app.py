@@ -26,13 +26,18 @@ st.title("📋 Gestor de Créditos Web")
 
 uploaded_file = st.file_uploader("📄 Sube tu archivo Excel", type=["xlsx"])
 
-def actualizar_estatus(df):
+def calcular_proximo_pago(fecha_base, tipo_pago):
+    dias = PAGO_DIAS.get(tipo_pago, 1)
+    if pd.isnull(fecha_base):
+        return pd.NaT
+    return fecha_base + timedelta(days=dias)
+
+def actualizar_estatus_y_fecha(df):
     hoy = datetime.now().date()
     for i, row in df.iterrows():
         tipo = str(row['Tipo de pago']).strip().lower()
-        fecha_credito = row['Fecha']
-        pagos = row['Pagos realizados']
         valor = row['Valor']
+        pagos = row['Pagos realizados']
         saldo = valor - pagos
         df.at[i, 'Saldo restante'] = saldo
 
@@ -41,19 +46,16 @@ def actualizar_estatus(df):
             df.at[i, 'Próximo pago'] = pd.NaT
             continue
 
-        if pd.isnull(row['Próximo pago']):
-            if pd.notnull(fecha_credito) and tipo in PAGO_DIAS:
-                df.at[i, 'Próximo pago'] = fecha_credito + timedelta(days=PAGO_DIAS[tipo])
-        else:
-            fecha_base = row['Próximo pago']
-            if isinstance(fecha_base, pd.Timestamp):
-                if fecha_base.date() <= hoy:
-                    fecha_base = pd.Timestamp(hoy)
-                df.at[i, 'Próximo pago'] = fecha_base + timedelta(days=PAGO_DIAS.get(tipo, 1))
+        fecha_base = row['Próximo pago'] if pd.notnull(row['Próximo pago']) else row['Fecha']
+        fecha_base = pd.to_datetime(fecha_base, errors='coerce')
 
-        prox_pago = df.at[i, 'Próximo pago']
-        if isinstance(prox_pago, pd.Timestamp) and not pd.isnull(prox_pago):
-            dias_dif = (prox_pago.date() - hoy).days
+        if pd.notnull(fecha_base):
+            if fecha_base.date() <= hoy:
+                fecha_base = pd.Timestamp(hoy)
+            proximo = calcular_proximo_pago(fecha_base, tipo)
+            df.at[i, 'Próximo pago'] = proximo
+            dias_dif = (proximo.date() - hoy).days
+
             if dias_dif < 0:
                 df.at[i, 'Estatus'] = 'Vencido'
             elif dias_dif == 0:
@@ -102,7 +104,7 @@ def exportar_excel_con_formato(df):
     return output
 
 if uploaded_file:
-    if "df_completo" not in st.session_state:
+    if "df_original" not in st.session_state:
         df = pd.read_excel(uploaded_file)
         df.columns = [col.strip().capitalize() for col in df.columns]
 
@@ -122,33 +124,30 @@ if uploaded_file:
         df['Pagos realizados'] = pd.to_numeric(df['Pagos realizados'], errors='coerce').fillna(0)
         df['Saldo restante'] = pd.to_numeric(df['Saldo restante'], errors='coerce').fillna(df['Valor'])
 
-        df = actualizar_estatus(df)
-        st.session_state.df_completo = df
+        df = actualizar_estatus_y_fecha(df)
+        st.session_state.df_original = df.copy()
+        st.session_state.df_editable = df.copy()
 
-    df = st.session_state.df_completo
+    filtro = st.selectbox("🔍 Filtrar por estatus", ["Todos"] + sorted(st.session_state.df_editable['Estatus'].unique()))
+    df_filtrado = st.session_state.df_editable if filtro == "Todos" else st.session_state.df_editable[st.session_state.df_editable['Estatus'] == filtro]
 
-    filtro = st.selectbox("🔍 Filtrar por estatus", ["Todos"] + sorted(df['Estatus'].unique()))
-    df_filtrado = df if filtro == "Todos" else df[df['Estatus'] == filtro]
-
-    st.subheader("📊 Tabla de Créditos - Edita directamente los abonos")
+    st.subheader("📊 Editar abonos directamente")
     edited_df = st.data_editor(
         df_filtrado,
         use_container_width=True,
         hide_index=True,
-        key="tabla_creditos",
-        column_order=None,
-        num_rows="dynamic"
+        key="tabla_creditos"
     )
 
-    if st.button("✅ Aplicar cambios y actualizar tabla"):
+    if st.button("✅ Aplicar cambios"):
         for i, row in edited_df.iterrows():
-            index = df[df['Cliente'] == row['Cliente']].index[0]
-            st.session_state.df_completo.at[index, 'Pagos realizados'] = row['Pagos realizados']
-            st.session_state.df_completo.at[index, 'Saldo restante'] = df.at[index, 'Valor'] - row['Pagos realizados']
+            index = st.session_state.df_editable[st.session_state.df_editable['Cliente'] == row['Cliente']].index[0]
+            st.session_state.df_editable.at[index, 'Pagos realizados'] = row['Pagos realizados']
 
-        st.session_state.df_completo = actualizar_estatus(st.session_state.df_completo)
-        st.success("✔️ Cambios aplicados correctamente. La tabla y las fechas han sido recalculadas.")
+        st.session_state.df_editable = actualizar_estatus_y_fecha(st.session_state.df_editable)
+        st.success("✔️ Datos actualizados correctamente.")
 
     st.subheader("📥 Descargar archivo actualizado")
-    excel_file = exportar_excel_con_formato(st.session_state.df_completo)
+    excel_file = exportar_excel_con_formato(st.session_state.df_editable)
     st.download_button("📄 Descargar Excel con formato", excel_file, file_name="creditos_actualizados.xlsx")
+
