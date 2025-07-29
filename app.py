@@ -55,7 +55,7 @@ def actualizar_fila(df, index):
     df.at[index, 'Saldo restante'] = saldo
 
     if not pd.isnull(fecha_credito) and tipo in PAGO_DIAS:
-        df.at[index, 'Próximo pago'] = fecha_credito + timedelta(days=PAGO_DIAS[tipo])
+        df.at[index, 'Próximo pago'] = datetime.now() + timedelta(days=PAGO_DIAS[tipo])
 
     hoy = datetime.now().date()
     prox_pago = df.at[index, 'Próximo pago']
@@ -105,11 +105,14 @@ def exportar_excel_con_formato(df):
 
 if "df" not in st.session_state:
     st.session_state.df = None
+if "ediciones" not in st.session_state:
+    st.session_state.ediciones = {}
 
 archivo = st.file_uploader("Carga tu archivo Excel", type=["xlsx"])
 if archivo:
     df = pd.read_excel(archivo)
     st.session_state.df = preparar_dataframe(df)
+    st.session_state.ediciones = {}
 
 if st.session_state.df is not None:
     df = st.session_state.df
@@ -138,12 +141,15 @@ if st.session_state.df is not None:
 
     if edited_df is not None:
         for i in edited_df.index:
-            idx_real = df[(df['Cliente'] == edited_df.at[i, 'Cliente']) & (df['Fecha'] == df.at[i, 'Fecha'])].index
+            idx_real = df[(df['Cliente'] == edited_df.at[i, 'Cliente']) & (df['Fecha'] == edited_df.at[i, 'Fecha'])].index
             if not idx_real.empty:
                 idx = idx_real[0]
-                df.at[idx, 'Pagos realizados'] = edited_df.at[i, 'Pagos realizados']
-                df.at[idx, 'Fecha'] = edited_df.at[i, 'Fecha']
+                pagos = edited_df.at[i, 'Pagos realizados']
+                fecha = edited_df.at[i, 'Fecha']
+                df.at[idx, 'Pagos realizados'] = pagos
+                df.at[idx, 'Fecha'] = fecha
                 df = actualizar_fila(df, idx)
+
         st.session_state.df = df
 
     with st.expander("Agregar nuevo crédito"):
@@ -176,7 +182,7 @@ if st.session_state.df is not None:
             st.rerun()
 
     st.download_button(
-        label="🗕️ Descargar archivo actualizado",
+        label="📅 Descargar archivo actualizado",
         data=exportar_excel_con_formato(df),
         file_name=f"creditos_actualizado_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
