@@ -55,7 +55,7 @@ def actualizar_fila(df, index):
     df.at[index, 'Saldo restante'] = saldo
 
     if not pd.isnull(fecha_credito) and tipo in PAGO_DIAS:
-        df.at[index, 'Próximo pago'] = datetime.now() + timedelta(days=PAGO_DIAS[tipo])
+        df.at[index, 'Próximo pago'] = fecha_credito + timedelta(days=PAGO_DIAS[tipo])
 
     hoy = datetime.now().date()
     prox_pago = df.at[index, 'Próximo pago']
@@ -105,8 +105,6 @@ def exportar_excel_con_formato(df):
 
 if "df" not in st.session_state:
     st.session_state.df = None
-if "abonos" not in st.session_state:
-    st.session_state.abonos = {}
 
 archivo = st.file_uploader("Carga tu archivo Excel", type=["xlsx"])
 if archivo:
@@ -117,7 +115,6 @@ if st.session_state.df is not None:
     df = st.session_state.df
 
     col1, col2 = st.columns([3, 1])
-
     with col2:
         filtro = st.selectbox("Filtrar por estatus", ["Todos"] + list(COLORES.keys()))
         busqueda = st.text_input("Buscar por nombre de cliente").lower()
@@ -128,21 +125,26 @@ if st.session_state.df is not None:
     if busqueda:
         df_filtrado = df_filtrado[df_filtrado['Cliente'].astype(str).str.lower().str.contains(busqueda)]
 
-    st.write("### Créditos")
+    edited_df = st.data_editor(
+        df_filtrado,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Pagos realizados": st.column_config.NumberColumn("Pagos realizados", step=1000),
+            "Fecha": st.column_config.DateColumn("Fecha")
+        },
+        disabled=[col for col in df.columns if col not in ["Pagos realizados", "Fecha"]]
+    )
 
-    for i, row in df_filtrado.iterrows():
-        st.markdown(f"**Cliente:** {row['Cliente']} | Estatus: {row['Estatus']} | Saldo: {row['Saldo restante']} | Próximo pago: {row['Próximo pago'].strftime('%Y-%m-%d') if pd.notnull(row['Próximo pago']) else ''}")
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            abono = st.number_input(f"Abono para {row['Cliente']}-{i}", key=f"abono_{i}", min_value=0.0, step=1000.0, format="%.2f")
-        with col2:
-            if st.button("Aplicar pago", key=f"btn_{i}"):
-                idx = df[(df['Cliente'] == row['Cliente']) & (df['Fecha'] == row['Fecha'])].index[0]
-                df.at[idx, 'Pagos realizados'] += abono
-                df.at[idx, 'Fecha'] = datetime.now()
+    if edited_df is not None:
+        for i in edited_df.index:
+            idx_real = df[(df['Cliente'] == edited_df.at[i, 'Cliente']) & (df['Fecha'] == df.at[i, 'Fecha'])].index
+            if not idx_real.empty:
+                idx = idx_real[0]
+                df.at[idx, 'Pagos realizados'] = edited_df.at[i, 'Pagos realizados']
+                df.at[idx, 'Fecha'] = edited_df.at[i, 'Fecha']
                 df = actualizar_fila(df, idx)
-                st.session_state.df = df
-                st.experimental_rerun()
+        st.session_state.df = df
 
     with st.expander("Agregar nuevo crédito"):
         with st.form("nuevo_credito"):
@@ -171,13 +173,11 @@ if st.session_state.df is not None:
             df = actualizar_fila(df, len(df) - 1)
             st.session_state.df = df
             st.success("Nuevo crédito agregado")
-            st.experimental_rerun()
+            st.rerun()
 
     st.download_button(
-        label="📅 Descargar archivo actualizado",
+        label="🗕️ Descargar archivo actualizado",
         data=exportar_excel_con_formato(df),
         file_name=f"creditos_actualizado_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-
-
