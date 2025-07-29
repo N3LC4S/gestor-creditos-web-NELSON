@@ -140,15 +140,25 @@ if st.session_state.df is not None:
     )
 
     if edited_df is not None:
-        for i in edited_df.index:
-            idx_real = df[(df['Cliente'] == edited_df.at[i, 'Cliente']) & (df['Fecha'] == edited_df.at[i, 'Fecha'])].index
-            if not idx_real.empty:
-                idx = idx_real[0]
-                pagos = edited_df.at[i, 'Pagos realizados']
-                fecha = edited_df.at[i, 'Fecha']
-                df.at[idx, 'Pagos realizados'] = pagos
-                df.at[idx, 'Fecha'] = fecha
-                df = actualizar_fila(df, idx)
+        for i, row in edited_df.iterrows():
+            cliente_editado = row['Cliente']
+            fecha_editada = pd.to_datetime(row['Fecha'], errors='coerce')
+
+            idx_original = df[(df['Cliente'] == cliente_editado) & (df['Fecha'].dt.date == fecha_editada.date())].index
+            if not idx_original.empty:
+                idx = idx_original[0]
+                cambios = False
+
+                if df.at[idx, 'Pagos realizados'] != row['Pagos realizados']:
+                    df.at[idx, 'Pagos realizados'] = row['Pagos realizados']
+                    cambios = True
+
+                if df.at[idx, 'Fecha'].date() != fecha_editada.date():
+                    df.at[idx, 'Fecha'] = fecha_editada
+                    cambios = True
+
+                if cambios:
+                    df = actualizar_fila(df, idx)
 
         st.session_state.df = df
 
