@@ -41,7 +41,7 @@ def preparar_dataframe(df):
     df['Fecha'] = pd.to_datetime(df['Fecha'], errors='coerce')
     df['Próximo pago'] = pd.to_datetime(df['Próximo pago'], errors='coerce')
 
-    for i, row in df.iterrows():
+    for i, _ in df.iterrows():
         df = actualizar_fila(df, i)
     return df
 
@@ -136,9 +136,12 @@ if st.session_state.df is not None:
         key="editor"
     )
 
-    # Detectar cambios en 'Pagos realizados' o 'Valor'
+    # Detectar cambios
     for i, row in edited_df.iterrows():
-        idx_global = df[(df['Cliente'] == row['Cliente']) & (df['Fecha'] == row['Fecha'])].index
+        idx_global = df[
+            (df['Cliente'] == row['Cliente']) &
+            (df['Fecha'] == row['Fecha'])
+        ].index
         if not idx_global.empty:
             idx = idx_global[0]
             for campo in ['Pagos realizados', 'Valor']:
@@ -186,3 +189,4 @@ if st.session_state.df is not None:
         file_name=f"creditos_actualizado_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
