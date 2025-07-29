@@ -41,7 +41,7 @@ def preparar_dataframe(df):
     df['Fecha'] = pd.to_datetime(df['Fecha'], errors='coerce')
     df['Próximo pago'] = pd.to_datetime(df['Próximo pago'], errors='coerce')
 
-    for i, _ in df.iterrows():
+    for i, row in df.iterrows():
         df = actualizar_fila(df, i)
     return df
 
@@ -136,7 +136,8 @@ if st.session_state.df is not None:
         key="editor"
     )
 
-    # Detectar cambios
+    filas_actualizadas = []
+
     for i, row in edited_df.iterrows():
         idx_global = df[
             (df['Cliente'] == row['Cliente']) &
@@ -144,16 +145,26 @@ if st.session_state.df is not None:
         ].index
         if not idx_global.empty:
             idx = idx_global[0]
+            cambio = False
             for campo in ['Pagos realizados', 'Valor']:
                 if df.at[idx, campo] != row[campo]:
                     df.at[idx, campo] = row[campo]
-                    df.at[idx, 'Fecha'] = datetime.now()
-                    tipo_pago = df.at[idx, 'Tipo de pago']
-                    dias = PAGO_DIAS.get(str(tipo_pago).lower(), 1)
-                    df.at[idx, 'Próximo pago'] = datetime.now() + timedelta(days=dias)
-                    df = actualizar_fila(df, idx)
+                    cambio = True
+            if cambio:
+                df.at[idx, 'Fecha'] = datetime.now()
+                tipo_pago = df.at[idx, 'Tipo de pago']
+                dias = PAGO_DIAS.get(str(tipo_pago).lower(), 1)
+                df.at[idx, 'Próximo pago'] = datetime.now() + timedelta(days=dias)
+                df = actualizar_fila(df, idx)
+                filas_actualizadas.append(idx)
 
-    st.session_state.df = df
+    if filas_actualizadas:
+        df_filtrado = df.copy()
+        if filtro != "Todos":
+            df_filtrado = df_filtrado[df_filtrado['Estatus'] == filtro]
+        if busqueda:
+            df_filtrado = df_filtrado[df_filtrado['Cliente'].astype(str).str.lower().str.contains(busqueda)]
+        st.session_state.df = df
 
     with st.expander("Agregar nuevo crédito"):
         with st.form("nuevo_credito"):
@@ -189,4 +200,3 @@ if st.session_state.df is not None:
         file_name=f"creditos_actualizado_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-
