@@ -174,7 +174,7 @@ if st.session_state.df is not None:
             st.rerun()
 
     st.download_button(
-        label="📥 Descargar archivo actualizado",
+        label="📅 Descargar archivo actualizado",
         data=exportar_excel_con_formato(df),
         file_name=f"creditos_actualizado_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
