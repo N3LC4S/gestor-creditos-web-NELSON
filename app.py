@@ -33,13 +33,17 @@ def preparar_dataframe(df):
         df['Pagos realizados'] = 0
     if 'Saldo restante' not in df.columns:
         df['Saldo restante'] = df['Valor']
-    if 'Estatus' not in df.columns:
-        df['Estatus'] = ''
     if 'Fecha' not in df.columns:
         df['Fecha'] = datetime.now().date()
 
     df['Fecha'] = pd.to_datetime(df['Fecha'], errors='coerce')
     df['Próximo pago'] = pd.to_datetime(df['Próximo pago'], errors='coerce')
+
+    # Recalcular estatus siempre
+    if 'Estatus' not in df.columns:
+        df['Estatus'] = ''
+    else:
+        df['Estatus'] = ''
 
     for i in df.index:
         df = actualizar_fila(df, i)
@@ -140,25 +144,17 @@ if st.session_state.df is not None:
     )
 
     if edited_df is not None:
-        for i, row in edited_df.iterrows():
-            cliente_editado = row['Cliente']
-            fecha_editada = pd.to_datetime(row['Fecha'], errors='coerce')
+        for i in edited_df.index:
+            cliente = edited_df.at[i, 'Cliente']
+            pagos = edited_df.at[i, 'Pagos realizados']
+            fecha = edited_df.at[i, 'Fecha']
 
-            idx_original = df[(df['Cliente'] == cliente_editado) & (df['Fecha'].dt.date == fecha_editada.date())].index
-            if not idx_original.empty:
-                idx = idx_original[0]
-                cambios = False
-
-                if df.at[idx, 'Pagos realizados'] != row['Pagos realizados']:
-                    df.at[idx, 'Pagos realizados'] = row['Pagos realizados']
-                    cambios = True
-
-                if df.at[idx, 'Fecha'].date() != fecha_editada.date():
-                    df.at[idx, 'Fecha'] = fecha_editada
-                    cambios = True
-
-                if cambios:
-                    df = actualizar_fila(df, idx)
+            idx_real = df[(df['Cliente'] == cliente)].index
+            if not idx_real.empty:
+                idx = idx_real[0]
+                df.at[idx, 'Pagos realizados'] = pagos
+                df.at[idx, 'Fecha'] = fecha
+                df = actualizar_fila(df, idx)
 
         st.session_state.df = df
 
