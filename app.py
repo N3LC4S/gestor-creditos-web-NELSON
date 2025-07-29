@@ -1,18 +1,15 @@
 import streamlit as st
 import pandas as pd
+from tkinter import filedialog, ttk, messagebox
 from datetime import datetime, timedelta
-from io import BytesIO
-from openpyxl import Workbook
-from openpyxl.styles import Alignment, PatternFill
-from openpyxl.utils.dataframe import dataframe_to_rows
-
-st.set_page_config(page_title="Gestor de Créditos", layout="wide")
+from openpyxl import load_workbook
+from openpyxl.styles import PatternFill, Alignment
+import os
 
 PAGO_DIAS = {
     'diario': 1,
     'semanal': 7,
-    'quincenal': 15,
-    'mensual': 30
+    'quincenal': 15
 }
 
 COLORES = {
@@ -23,12 +20,27 @@ COLORES = {
     'Pagado': 'DDBEA9'
 }
 
-if "df" not in st.session_state:
-    st.session_state.df = None
+df_global = None
+file_actual = None
+tree = None
+filtro_actual = ""
+df_filtrado = None
 
-st.title("📋 Gestor de Créditos")
-uploaded_file = st.file_uploader("📄 Cargar archivo Excel", type=["xlsx"])
+def formato_monto(valor):
+    if isinstance(valor, float) and valor.is_integer():
+        return int(valor)
+    return valor
 
+def cargar_excel():
+    global df_global, file_actual
+    file_path = filedialog.askopenfilename(filetypes=[('Excel Files', '*.xlsx *.xls')])
+    if not file_path:
+        return
+    file_actual = file_path
+    df = pd.read_excel(file_path)
+    df = preparar_dataframe(df)
+    df_global = df.copy()
+    mostrar_tabla(df_global, file_path)
 
 def preparar_dataframe(df):
     df.columns = [col.strip().capitalize() for col in df.columns]
@@ -47,29 +59,24 @@ def preparar_dataframe(df):
 
     df['Fecha'] = pd.to_datetime(df['Fecha'], errors='coerce')
     df['Próximo pago'] = pd.to_datetime(df['Próximo pago'], errors='coerce')
-    df['Pagos realizados'] = pd.to_numeric(df['Pagos realizados'], errors='coerce').fillna(0)
-    df['Saldo restante'] = pd.to_numeric(df['Saldo restante'], errors='coerce').fillna(df['Valor'])
 
-    hoy = datetime.now().date()
     for i, row in df.iterrows():
         tipo = str(row['Tipo de pago']).lower()
         fecha_credito = row['Fecha']
-        prox_pago = row['Próximo pago']
         pagos = row['Pagos realizados']
         valor = row['Valor']
         saldo = valor - pagos
         df.at[i, 'Saldo restante'] = saldo
 
-        if saldo <= 0:
-            df.at[i, 'Estatus'] = 'Pagado'
-            continue
-
-        if pd.isnull(prox_pago) and not pd.isnull(fecha_credito):
+        if pd.isnull(row['Próximo pago']) and not pd.isnull(fecha_credito):
             if tipo in PAGO_DIAS:
                 df.at[i, 'Próximo pago'] = fecha_credito + timedelta(days=PAGO_DIAS[tipo])
-                prox_pago = df.at[i, 'Próximo pago']
 
-        if pd.notnull(prox_pago):
+        hoy = datetime.now().date()
+        prox_pago = df.at[i, 'Próximo pago']
+        if saldo <= 0:
+            df.at[i, 'Estatus'] = 'Pagado'
+        elif pd.notnull(prox_pago):
             dias_dif = (prox_pago.date() - hoy).days
             if dias_dif < 0:
                 df.at[i, 'Estatus'] = 'Vencido'
@@ -84,101 +91,234 @@ def preparar_dataframe(df):
 
     return df
 
+def guardar(selected_item, nuevo_valor, columna):
+    global df_global, df_filtrado
+    try:
+        idx_real = int(selected_item)
 
-def exportar_excel_con_formato(df):
-    output = BytesIO()
-    wb = Workbook()
+        nuevo_valor = float(nuevo_valor)
+        nuevo_valor = formato_monto(nuevo_valor)
+
+        if columna == 'Pagos realizados':
+            df_global.at[idx_real, 'Pagos realizados'] = nuevo_valor
+        elif columna == 'Valor':
+            df_global.at[idx_real, 'Valor'] = nuevo_valor
+
+        valor = float(df_global.at[idx_real, 'Valor'])
+        pagos = float(df_global.at[idx_real, 'Pagos realizados'])
+        saldo = valor - pagos
+        saldo = formato_monto(saldo)
+        df_global.at[idx_real, 'Saldo restante'] = saldo
+
+        if columna == 'Pagos realizados':
+            df_global.at[idx_real, 'Fecha'] = datetime.now()
+            tipo_pago = df_global.at[idx_real, 'Tipo de pago']
+            dias = PAGO_DIAS.get(str(tipo_pago).lower(), 1)
+            df_global.at[idx_real, 'Próximo pago'] = datetime.now() + timedelta(days=dias)
+
+        df_global = preparar_dataframe(df_global)
+
+        if filtro_actual:
+            buscar_nombre(None)
+        else:
+            cargar_datos_en_tabla(df_global)
+
+    except Exception as e:
+        messagebox.showerror("Error", f"No se pudo actualizar: {str(e)}")
+
+def cargar_datos_en_tabla(dataframe):
+    for row in tree.get_children():
+        tree.delete(row)
+    for idx, row in dataframe.iterrows():
+        tag = row['Estatus']
+        valores = []
+        for col in dataframe.columns:
+            val = row[col]
+            if isinstance(val, (float, int)):
+                val = formato_monto(val)
+            elif isinstance(val, pd.Timestamp):
+                val = val.strftime('%Y-%m-%d') if not pd.isnull(val) else ''
+            valores.append(val)
+        tree.insert('', 'end', iid=str(idx), values=valores, tags=(tag,))
+
+def aplicar_filtro_auto(event=None):
+    global filtro_actual, df_filtrado
+    filtro = combo_filtro.get()
+    if filtro == "Todos":
+        filtro_actual = ""
+        df_filtrado = df_global
+    else:
+        filtro_actual = filtro.lower()
+        df_filtrado = df_global[df_global['Estatus'].astype(str).str.lower() == filtro_actual]
+    cargar_datos_en_tabla(df_filtrado)
+
+def buscar_nombre(event):
+    global df_filtrado, filtro_actual
+    texto = entry_busqueda.get().lower()
+    filtro_actual = texto
+    if texto == "":
+        df_filtrado = df_global
+    else:
+        df_filtrado = df_global[df_global['Cliente'].astype(str).str.lower().str.contains(texto)]
+    cargar_datos_en_tabla(df_filtrado)
+
+def guardar_como():
+    if not file_actual:
+        messagebox.showwarning("Atención", "Primero carga un archivo Excel para poder guardar.")
+        return
+    fecha = datetime.now().strftime("%Y%m%d_%H%M%S")
+    nombre_nuevo = os.path.splitext(file_actual)[0] + f"_actualizado_{fecha}.xlsx"
+
+    # Exportar fechas sin hora
+    df_export = df_global.copy()
+    df_export['Fecha'] = df_export['Fecha'].dt.strftime('%Y-%m-%d')
+    df_export['Próximo pago'] = df_export['Próximo pago'].dt.strftime('%Y-%m-%d')
+    df_export.to_excel(nombre_nuevo, index=False)
+
+    wb = load_workbook(nombre_nuevo)
     ws = wb.active
-    ws.title = "Créditos"
+    estatus_col = list(df_global.columns).index('Estatus') + 1
+    for row in range(2, ws.max_row + 1):
+        estatus = ws.cell(row=row, column=estatus_col).value
+        color = COLORES.get(estatus)
+        for col in range(1, ws.max_column + 1):
+            cell = ws.cell(row=row, column=col)
+            cell.alignment = Alignment(horizontal="left", vertical="center")
+            if color:
+                cell.fill = PatternFill(start_color=color, end_color=color, fill_type="solid")
+    wb.save(nombre_nuevo)
+    messagebox.showinfo("Guardado", f"Archivo guardado como: {nombre_nuevo}")
 
-    for r_idx, row in enumerate(dataframe_to_rows(df, index=False, header=True), 1):
-        for c_idx, value in enumerate(row, 1):
-            celda = ws.cell(row=r_idx, column=c_idx, value=value)
-            celda.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+def editar_pago(event):
+    item = tree.identify_row(event.y)
+    column = tree.identify_column(event.x)
+    if not item:
+        return
 
-            if r_idx > 1 and df.columns[c_idx - 1] == "Estatus":
-                estatus = value
-                color = COLORES.get(estatus, None)
-                if color:
-                    fill = PatternFill(start_color=color, end_color=color, fill_type="solid")
-                    for col in range(1, len(df.columns) + 1):
-                        ws.cell(row=r_idx, column=col).fill = fill
+    col_index = int(column.replace('#', '')) - 1
+    columnas = list(df_global.columns)
+    if col_index >= len(columnas):
+        return
+    col_name = columnas[col_index]
 
-    for col in ws.columns:
-        max_length = 0
-        col_letter = col[0].column_letter
-        for cell in col:
-            try:
-                if cell.value:
-                    max_length = max(max_length, len(str(cell.value)))
-            except:
-                pass
-        ws.column_dimensions[col_letter].width = max_length + 2
+    if col_name not in ['Valor', 'Pagos realizados']:
+        return
 
-    wb.save(output)
-    output.seek(0)
-    return output
+    valor_actual = tree.set(item, col_name)
+    entry = tk.Entry(tree)
+    x, y, width, height = tree.bbox(item, column)
+    entry.place(x=x, y=y, width=width, height=height)
+    entry.insert(0, valor_actual)
+    entry.focus()
 
+    def guardar_cambio(event):
+        try:
+            nuevo_valor = float(entry.get())
+            entry.destroy()
+            guardar(item, nuevo_valor, col_name)
+        except ValueError:
+            messagebox.showerror("Error", "El valor ingresado no es válido.")
+            entry.destroy()
 
-if uploaded_file:
-    df = pd.read_excel(uploaded_file)
-    df = preparar_dataframe(df)
-    st.session_state.df = df
+    entry.bind('<Return>', guardar_cambio)
+    entry.bind('<FocusOut>', lambda e: entry.destroy())
 
-if st.session_state.df is not None:
-    df = st.session_state.df
+def agregar_nuevo_cobro():
+    global df_global
 
-    filtro = st.selectbox("🔍 Filtrar por estatus", ["Todos"] + list(COLORES.keys()))
-    texto_busqueda = st.text_input("🔎 Buscar cliente por nombre")
+    ventana_nuevo = tk.Toplevel()
+    ventana_nuevo.title("Agregar Nuevo Cobro")
+    ventana_nuevo.geometry("300x300")
 
-    df_mostrar = df.copy()
-    if filtro != "Todos":
-        df_mostrar = df_mostrar[df_mostrar['Estatus'] == filtro]
-    if texto_busqueda:
-        df_mostrar = df_mostrar[df_mostrar['Cliente'].astype(str).str.contains(texto_busqueda, case=False)]
+    ttk.Label(ventana_nuevo, text="Fecha (YYYY-MM-DD):").pack(pady=2)
+    entry_fecha = ttk.Entry(ventana_nuevo)
+    entry_fecha.insert(0, datetime.now().strftime("%Y-%m-%d"))
+    entry_fecha.pack()
 
-    st.subheader("📊 Créditos actuales")
-    edited_df = st.data_editor(df_mostrar, key="edicion", num_rows="dynamic", use_container_width=True)
+    ttk.Label(ventana_nuevo, text="Cliente:").pack(pady=2)
+    clientes_existentes = sorted(df_global['Cliente'].dropna().unique().tolist())
+    combo_cliente = ttk.Combobox(ventana_nuevo, values=clientes_existentes)
+    combo_cliente.pack()
 
-    if st.button("💾 Aplicar cambios"):
-        for i, row in edited_df.iterrows():
-            index = df[df['Cliente'] == row['Cliente']].index[0]
-            df.at[index, 'Pagos realizados'] = row['Pagos realizados']
-            df.at[index, 'Saldo restante'] = df.at[index, 'Valor'] - row['Pagos realizados']
-            df.at[index, 'Fecha'] = datetime.now()
+    ttk.Label(ventana_nuevo, text="Valor:").pack(pady=2)
+    entry_valor = ttk.Entry(ventana_nuevo)
+    entry_valor.pack()
 
-            tipo = str(df.at[index, 'Tipo de pago']).lower()
-            dias = PAGO_DIAS.get(tipo, 1)
-            df.at[index, 'Próximo pago'] = datetime.now() + timedelta(days=dias)
+    ttk.Label(ventana_nuevo, text="Tipo de pago (diario/semanal/quincenal):").pack(pady=2)
+    combo_tipo = ttk.Combobox(ventana_nuevo, values=list(PAGO_DIAS.keys()))
+    combo_tipo.set("diario")
+    combo_tipo.pack()
 
-        df = preparar_dataframe(df)
-        st.session_state.df = df
-        st.success("✅ Cambios aplicados correctamente")
+    def guardar_nuevo():
+        global df_global
+        try:
+            fecha = datetime.strptime(entry_fecha.get(), "%Y-%m-%d")
+            cliente = combo_cliente.get().strip()
+            valor = float(entry_valor.get())
+            valor = formato_monto(valor)
+            tipo = combo_tipo.get().strip().lower()
 
-    st.subheader("➕ Agregar nuevo cobro")
-    with st.form("nuevo_cobro"):
-        cliente = st.text_input("Nombre del cliente")
-        valor = st.number_input("Valor del crédito", min_value=0.0, step=100.0)
-        tipo_pago = st.selectbox("Tipo de pago", list(PAGO_DIAS.keys()))
-        fecha_inicio = st.date_input("Fecha de inicio", value=datetime.now().date())
-        enviado = st.form_submit_button("Agregar")
+            if cliente == "" or tipo not in PAGO_DIAS:
+                raise ValueError("Datos incompletos o tipo de pago inválido.")
 
-        if enviado and cliente and valor:
             nuevo = {
-                'Fecha': fecha_inicio,
+                'Fecha': fecha,
                 'Cliente': cliente,
                 'Valor': valor,
-                'Tipo de pago': tipo_pago,
+                'Tipo de pago': tipo,
                 'Pagos realizados': 0,
                 'Saldo restante': valor,
-                'Próximo pago': fecha_inicio + timedelta(days=PAGO_DIAS[tipo_pago]),
+                'Próximo pago': fecha + timedelta(days=PAGO_DIAS[tipo]),
                 'Estatus': 'Al día'
             }
-            df = df.append(nuevo, ignore_index=True)
-            df = preparar_dataframe(df)
-            st.session_state.df = df
-            st.success("✅ Cobro agregado correctamente")
 
-    st.subheader("📥 Descargar archivo actualizado")
-    archivo_excel = exportar_excel_con_formato(df)
-    st.download_button("📄 Descargar Excel", archivo_excel, file_name="creditos_actualizados.xlsx")
+            df_global.loc[len(df_global)] = nuevo
+            df_global = preparar_dataframe(df_global)
+            cargar_datos_en_tabla(df_global)
+            ventana_nuevo.destroy()
+
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo agregar el nuevo cobro: {e}")
+
+    ttk.Button(ventana_nuevo, text="Guardar", command=guardar_nuevo).pack(pady=10)
+
+def mostrar_tabla(df, file_path):
+    global tree, combo_filtro, entry_busqueda
+    ventana = tk.Toplevel()
+    ventana.title("Gestor de Créditos")
+    ventana.geometry("1100x600")
+
+    columns = list(df.columns)
+    tree = ttk.Treeview(ventana, columns=columns, show='headings')
+    tree.pack(expand=True, fill='both')
+
+    style = ttk.Style()
+    style.configure("Treeview", rowheight=25)
+
+    for estatus, color in COLORES.items():
+        tree.tag_configure(estatus, background=f'#{color}')
+
+    for col in columns:
+        tree.heading(col, text=col)
+        tree.column(col, width=130)
+
+    tree.bind('<Double-1>', editar_pago)
+    cargar_datos_en_tabla(df)
+
+    entry_busqueda = ttk.Entry(ventana)
+    entry_busqueda.pack(pady=5)
+    entry_busqueda.bind("<KeyRelease>", buscar_nombre)
+
+    combo_filtro = ttk.Combobox(ventana, values=["Todos"] + list(COLORES.keys()))
+    combo_filtro.set("Todos")
+    combo_filtro.pack(pady=5)
+    combo_filtro.bind("<<ComboboxSelected>>", aplicar_filtro_auto)
+
+    ttk.Button(ventana, text="Agregar nuevo cobro", command=agregar_nuevo_cobro).pack(pady=5)
+    ttk.Button(ventana, text="Guardar como nuevo archivo", command=guardar_como).pack(pady=5)
+
+root = tk.Tk()
+root.title("Gestor de Créditos")
+root.geometry("400x200")
+ttk.Button(root, text="Cargar archivo Excel", command=cargar_excel).pack(expand=True)
+root.mainloop()
