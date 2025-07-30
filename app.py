@@ -34,6 +34,12 @@ cargado = st.file_uploader("Sube tu archivo Excel", type=["xlsx"])
 
 if cargado:
     df_original = pd.read_excel(cargado)
+    df_original.columns = df_original.columns.str.strip()  # Normalizar nombres de columnas
+
+    if "Estado" not in df_original.columns:
+        st.error("El archivo debe contener la columna 'Estado'. Revisa que esté escrita correctamente.")
+        st.stop()
+
     df_original = df_original.fillna("")
 
     if "data" not in st.session_state:
